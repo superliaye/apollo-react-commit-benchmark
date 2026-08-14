@@ -735,17 +735,20 @@ var renderResult = (result) => {
       let previousSnapshot = sample.baselineSnapshot;
       let queryCommitIndex = 0;
       let derivedCommitIndex = 0;
+      const hasCombinedCommitPattern = sample.profilerCommitCount === 2;
       const cells = sample.profilerCommits.map((commit) => {
         const isDerivedCommit = commit.snapshot === previousSnapshot;
         previousSnapshot = commit.snapshot;
         if (isDerivedCommit) {
           derivedCommitIndex += 1;
-          return `<span class="commit-cell derived" aria-label="Derived-state commit ${derivedCommitIndex}; snapshot ${commit.snapshot}">D${derivedCommitIndex}</span>`;
+          const label2 = hasCombinedCommitPattern ? "D · combined" : `D${derivedCommitIndex}`;
+          return `<span class="commit-cell derived" aria-label="Derived-state commit ${derivedCommitIndex}; snapshot ${commit.snapshot}">${label2}</span>`;
         }
         queryCommitIndex += 1;
-        return `<span class="commit-cell" aria-label="Query-result commit ${queryCommitIndex}; snapshot ${commit.snapshot}">Q${queryCommitIndex}</span>`;
+        const label = hasCombinedCommitPattern ? `Q · all ${sample.subscriberCount}` : `Q${queryCommitIndex}`;
+        return `<span class="commit-cell" aria-label="Query-result commit ${queryCommitIndex}; snapshot ${commit.snapshot}">${label}</span>`;
       }).join("");
-      const progression = sample.distinctLayoutSnapshots.join(" → ");
+      const progression = [sample.baselineSnapshot, ...sample.distinctLayoutSnapshots].join(" → ");
       return `<div class="commit-strip-row"><div class="commit-strip-heading"><strong>${sample.armLabel}</strong><span>${sample.profilerCommitCount} commits</span></div><div class="commit-strip">${cells}</div><p class="trace-explanation">Visible query progression: <code>${progression}</code></p></div>`;
     }).join("");
   }

@@ -3,6 +3,8 @@ const repositoryRoot = new URL('../', import.meta.url);
 const requiredFiles = [
   'README.md',
   'index.html',
+  'favicon.svg',
+  '.gitignore',
   'benchmark.js',
   'package.json',
   'src/benchmark.ts',
@@ -22,7 +24,7 @@ const readRequiredFile = async (path: string): Promise<string> => {
 const repositoryPath = decodeURIComponent(repositoryRoot.pathname);
 const publicTextFiles = new Map<string, string>();
 for await (const path of new Bun.Glob('**/*').scan({ cwd: repositoryPath, dot: true, onlyFiles: true })) {
-  if (path.startsWith('.git/')) continue;
+  if (path.startsWith('.git/') || path.startsWith('.isaac/')) continue;
   publicTextFiles.set(path, await Bun.file(new URL(path, repositoryRoot)).text());
 }
 
@@ -57,12 +59,12 @@ for (const id of requiredElementIds) {
 }
 
 const requiredSections = [
-  'What ordinary Apollo code this represents',
-  'From cache publication to committed, paintable UI',
-  'Three-arm experiment',
+  'A render calculates the UI. A commit publishes it.',
+  'Remove network noise. Keep the real React pressure.',
+  'Three arms ask one falsifiable question.',
   'Run the proof in this browser',
-  'See one result fragment across the screen',
-  'Why the newer version can split one update',
+  'Watch one result spread across the screen.',
+  'The code paths explain the measured task timeline.',
   'What the benchmark does—and does not—establish',
 ];
 
@@ -109,8 +111,12 @@ for (const id of new Set(termLinks)) {
 }
 
 const requiredClaims = [
-  'One cache write. Same data. 8× more React commits.',
+  'One cache write. Same final UI. 2 commits become 16.',
   'The stable result is the commit pattern.',
+  'The effect requires multiple independently mounted <code>useQuery</code> calls.',
+  'lanes are not independently manipulated by a benchmark arm.',
+  'Memoized consumers with stable props and callbacks would reduce',
+  'An unavailable or mismatched package fails the proof',
   'This patch is evidence, not a release recommendation.',
   'no synthetic busy loop or artificial “commit tax.”',
 ];
@@ -140,6 +146,7 @@ for (const [path, content] of publicTextFiles) {
   absoluteUserPath.lastIndex = 0;
 
   for (const candidate of content.match(urlPattern) ?? []) {
+    if (candidate === 'http://www.w3.org/2000/svg') continue;
     const url = new URL(candidate);
     if (url.protocol !== 'https:' || !allowedPublicHosts.has(url.hostname)) {
       errors.push(`${path} links to a non-allowlisted or non-HTTPS host: ${url.hostname}`);

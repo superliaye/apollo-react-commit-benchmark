@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A reproducible browser benchmark showing how the same Apollo cache update produces different React commit patterns in Apollo Client 3.6.9 and 3.14.1."
+    />
+    <title>Apollo / React commit scheduling lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1?target=es2022",
+          "react-dom/profiling": "https://esm.sh/react-dom@18.3.1/profiling?external=react&target=es2022"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Instrument Sans", system-ui, sans-serif;
+        color: #151826;
+        background: #f5f7fc;
+        font-synthesis: none;
+        --ink: #151826;
+        --slate: #545c70;
+        --muted: #60697d;
+        --line: #dce1ec;
+        --paper: #ffffff;
+        --paper-soft: #f5f7fc;
+        --blue: #5465d8;
+        --blue-soft: #edf0ff;
+        --teal: #08776e;
+        --teal-soft: #e4f5f2;
+        --amber: #b36b06;
+        --amber-soft: #fff2dc;
+        --red: #a43d3d;
+        --red-soft: #fcebea;
+        --shadow: 0 18px 50px rgb(30 38 74 / 8%);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body { margin: 0; background: var(--paper-soft); }
+      a { color: #3d4fc0; text-underline-offset: 3px; }
+      a:hover { color: #273798; }
+      a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible {
+        outline: 3px solid #293ca5;
+        outline-offset: 3px;
+      }
+      code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+      code { font-size: .91em; }
+      .skip-link {
+        position: fixed;
+        z-index: 20;
+        top: 10px;
+        left: 10px;
+        padding: 9px 12px;
+        border-radius: 6px;
+        color: white;
+        background: var(--ink);
+        transform: translateY(-160%);
+      }
+      .skip-link:focus { transform: translateY(0); }
+      .site-header {
+        position: sticky;
+        z-index: 10;
+        top: 0;
+        border-bottom: 1px solid rgb(220 225 236 / 85%);
+        background: rgb(245 247 252 / 90%);
+        backdrop-filter: blur(14px);
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: min(1120px, calc(100% - 40px));
+        min-height: 62px;
+        margin: auto;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 700; }
+      .brand-mark {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 9px;
+        color: white;
+        background: var(--blue);
+        font: 600 12px "IBM Plex Mono", monospace;
+      }
+      .nav-links { display: flex; gap: 22px; font-size: 14px; }
+      .nav-links a { color: var(--slate); text-decoration: none; }
+      .nav-links a:hover { color: var(--ink); }
+      main { width: min(1120px, calc(100% - 40px)); margin: auto; }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr);
+        gap: 72px;
+        align-items: center;
+        padding: 86px 0 72px;
+      }
+      .eyebrow { margin: 0 0 18px; color: var(--blue); font: 600 12px "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
+      h1, h2, h3 { letter-spacing: -.025em; }
+      h1 { max-width: 720px; margin: 0; font-size: clamp(42px, 6vw, 72px); line-height: .99; }
+      h2 { margin: 0 0 14px; font-size: clamp(28px, 4vw, 42px); line-height: 1.08; }
+      h3 { margin: 0 0 10px; font-size: 19px; }
+      p, li, dd { line-height: 1.62; }
+      .lede { max-width: 670px; margin: 24px 0 0; color: var(--slate); font-size: 19px; }
+      .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+      .button-link, button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 11px 17px;
+        border: 0;
+        border-radius: 8px;
+        font: 650 14px "Instrument Sans", sans-serif;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .button-primary { color: white; background: var(--blue); box-shadow: 0 8px 20px rgb(84 101 216 / 22%); }
+      .button-primary:hover { color: white; background: #4657c6; }
+      .button-secondary { color: var(--ink); border: 1px solid var(--line); background: white; }
+      .button-secondary:hover { color: var(--ink); border-color: #b9c0d1; }
+      button:disabled { cursor: wait; opacity: .55; }
+      .result-panel {
+        overflow: hidden;
+        border: 1px solid #d9deeb;
+        border-radius: 18px;
+        background: white;
+        box-shadow: var(--shadow);
+      }
+      .result-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+      .result-panel-header span:first-child { font-weight: 650; }
+      .reference-tag { padding: 4px 8px; border-radius: 999px; color: var(--slate); background: var(--paper-soft); font: 500 11px "IBM Plex Mono", monospace; }
+      .hero-results { display: grid; grid-template-columns: repeat(3, 1fr); }
+      .hero-result { min-width: 0; padding: 24px 17px 20px; border-right: 1px solid var(--line); }
+      .hero-result:last-child { border-right: 0; }
+      .hero-result .version { display: block; min-height: 34px; color: var(--slate); font-size: 13px; line-height: 1.25; }
+      .hero-result .value { display: block; margin-top: 8px; font: 600 clamp(34px, 4vw, 52px) "IBM Plex Mono", monospace; letter-spacing: -.06em; }
+      .hero-result .unit { color: var(--slate); font-size: 12px; }
+      .hero-result.regressed { background: #fffaf1; }
+      .hero-result.regressed .value { color: var(--amber); }
+      .hero-result.restored .value { color: var(--teal); }
+      .mini-trace { padding: 18px; border-top: 1px solid var(--line); background: #fafbfe; }
+      .mini-trace p { margin: 0 0 11px; color: var(--slate); font-size: 12px; }
+      .mini-strip { display: flex; gap: 3px; margin: 7px 0; }
+      .mini-strip span { height: 9px; flex: 1; border-radius: 2px; background: var(--blue); }
+      .mini-strip.fragmented span:nth-child(even) { background: #e7a23b; }
+      .hero-note { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+      .section { padding: 80px 0; border-top: 1px solid var(--line); }
+      .section-heading { max-width: 760px; margin-bottom: 36px; }
+      .section-heading > p { margin: 0; color: var(--slate); font-size: 17px; }
+      .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+      .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+      .card { padding: 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+      .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+      .card-number { margin-bottom: 18px; color: var(--blue); font: 600 12px "IBM Plex Mono", monospace; }
+      .callout { padding: 18px 20px; border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; background: var(--blue-soft); }
+      .callout strong { display: block; margin-bottom: 4px; }
+      .callout p { margin: 0; }
+      .callout.caution { border-left-color: #e7a23b; background: var(--amber-soft); }
+      .term { color: inherit; font-weight: 600; text-decoration-color: #adb4ca; text-decoration-style: dotted; }
+      .code-card { overflow: hidden; padding: 0; }
+      .code-title { display: flex; gap: 7px; align-items: center; padding: 12px 15px; border-bottom: 1px solid #2b3041; color: #bec5d6; background: #1b1f2d; font: 500 12px "IBM Plex Mono", monospace; }
+      .code-dot { width: 7px; height: 7px; border-radius: 50%; background: #e7a23b; }
+      pre { margin: 0; overflow: auto; padding: 22px; color: #dce2f2; background: #151826; font-size: 12px; line-height: 1.65; }
+      .code-keyword { color: #aeb8ff; }
+      .code-call { color: #7ddbd1; }
+      .flow-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: steps; }
+      .flow-list li { position: relative; padding: 14px 16px 14px 52px; border: 1px solid var(--line); border-radius: 10px; background: white; counter-increment: steps; }
+      .flow-list li::before { position: absolute; top: 14px; left: 15px; display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; color: white; background: var(--blue); content: counter(steps); font: 600 11px "IBM Plex Mono", monospace; }
+      .arm { position: relative; padding-top: 31px; }
+      .arm::before { position: absolute; top: 0; left: 0; width: 42px; height: 4px; border-radius: 4px; background: var(--blue); content: ""; }
+      .arm.regressed::before { background: #e7a23b; }
+      .arm.diagnostic::before { background: var(--teal); }
+      .arm-label { color: var(--muted); font: 500 11px "IBM Plex Mono", monospace; letter-spacing: .05em; text-transform: uppercase; }
+      .measure-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+      .measure { display: grid; grid-template-columns: 38px 1fr; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: white; }
+      .measure-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; color: var(--blue); background: var(--blue-soft); font: 600 12px "IBM Plex Mono", monospace; }
+      .measure h3 { font-size: 16px; }
+      .measure p { margin: 0; color: var(--slate); font-size: 14px; }
+      .lab-shell { overflow: hidden; border: 1px solid #cfd6e7; border-radius: 17px; background: white; box-shadow: var(--shadow); }
+      .lab-header { padding: 26px; border-bottom: 1px solid var(--line); background: #fbfcff; }
+      .lab-header h3 { font-size: 23px; }
+      .lab-header p { max-width: 800px; margin: 7px 0 0; color: var(--slate); }
+      .controls { display: grid; grid-template-columns: .8fr 1.15fr 1fr auto; gap: 14px; align-items: end; padding: 24px 26px 20px; }
+      label { display: grid; gap: 7px; color: var(--slate); font-size: 13px; }
+      label strong { color: var(--ink); font-weight: 600; }
+      input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #bac3d6; border-radius: 7px; color: var(--ink); background: white; font: 500 14px "IBM Plex Mono", monospace; }
+      .control-help { padding: 0 26px 22px; color: var(--muted); font-size: 13px; }
+      .status { margin: 0; padding: 14px 26px; border-top: 1px solid var(--line); color: var(--slate); background: #fafbfe; font: 500 12px "IBM Plex Mono", monospace; }
+      .verdict-card { margin-top: 24px; padding: 24px 26px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+      .verdict { margin: 0; padding: 14px 16px; border-radius: 9px; font-weight: 700; }
+      .verdict.pending { background: #eef1f7; }
+      .verdict.pass { color: #08685e; background: var(--teal-soft); }
+      .verdict.fail { color: var(--red); background: var(--red-soft); }
+      #proof-conditions { display: grid; gap: 10px; margin: 20px 0 0; padding-left: 20px; }
+      #proof-conditions li { padding-left: 4px; }
+      #proof-conditions span { display: block; color: var(--muted); font-size: 13px; }
+      .condition-pass strong { color: var(--teal); }
+      .condition-fail strong { color: var(--red); }
+      .environment { color: var(--muted); font-size: 13px; }
+      .table-wrap { overflow-x: auto; margin-top: 18px; border: 1px solid var(--line); border-radius: 11px; background: white; }
+      table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+      caption { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: left; font-weight: 650; }
+      th, td { padding: 11px 13px; border-bottom: 1px solid #e9ecf3; text-align: right; white-space: nowrap; }
+      tr:last-child td { border-bottom: 0; }
+      th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+      th { color: var(--slate); background: #fafbfe; font-size: 12px; font-weight: 600; }
+      td { font-size: 13px; }
+      .placeholder td { padding: 28px 16px; color: var(--muted); text-align: center !important; }
+      details { margin-top: 18px; border: 1px solid var(--line); border-radius: 11px; background: white; }
+      summary { padding: 15px 17px; cursor: pointer; font-weight: 650; }
+      details > div, details > pre { border-top: 1px solid var(--line); }
+      details > div { padding: 18px; }
+      details > pre { max-height: 480px; }
+      .trace-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 20px 0 14px; color: var(--slate); font-size: 13px; }
+      .legend-key { display: inline-flex; align-items: center; gap: 7px; }
+      .legend-swatch { width: 14px; height: 14px; border-radius: 4px; background: var(--blue); }
+      .legend-swatch.derived { background: #e7a23b; }
+      .commit-strips { display: grid; gap: 16px; }
+      .commit-strip-row { padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: white; }
+      .commit-strip-heading { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+      .commit-strip-heading span { color: var(--slate); font: 500 12px "IBM Plex Mono", monospace; }
+      .commit-strip { display: flex; flex-wrap: wrap; gap: 5px; }
+      .commit-cell { display: grid; min-width: 32px; height: 32px; padding: 0 7px; place-items: center; border-radius: 6px; color: white; background: var(--blue); font: 600 11px "IBM Plex Mono", monospace; }
+      .commit-cell.derived { color: #3b2706; background: #e7a23b; }
+      .trace-explanation { margin: 10px 0 0; color: var(--slate); font-size: 13px; }
+      .mechanism { display: grid; grid-template-columns: 1fr 58px 1fr; gap: 20px; align-items: stretch; }
+      .mechanism-arrow { display: grid; place-items: center; color: var(--muted); font: 600 24px "IBM Plex Mono", monospace; }
+      .mechanism-path { padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+      .mechanism-path ol { display: grid; gap: 9px; margin: 18px 0 0; padding-left: 22px; }
+      .mechanism-path.new { border-color: #ead5b4; background: #fffdf8; }
+      .source-links { margin-top: 26px; padding: 20px; border-radius: 11px; background: #edf0f8; }
+      .source-links h3 { font-size: 16px; }
+      .source-links ul { columns: 2; margin-bottom: 0; padding-left: 20px; }
+      .glossary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 44px; margin: 0; }
+      .glossary div { padding: 19px 0; border-top: 1px solid var(--line); scroll-margin-top: 82px; }
+      .glossary dt { font-weight: 700; }
+      .glossary dd { margin: 5px 0 0; color: var(--slate); }
+      .fine-print { color: var(--muted); font-size: 13px; }
+      footer { padding: 36px 0 56px; border-top: 1px solid var(--line); color: var(--slate); font-size: 13px; }
+      .footer-inner { width: min(1120px, calc(100% - 40px)); margin: auto; }
+      .benchmark-mount { position: fixed; left: -100000px; width: 960px; }
+      .benchmark-application { display: grid; gap: 8px; width: 100%; }
+      .benchmark-summary { min-height: 28px; padding: 6px; border: 1px solid #cbd5e1; }
+      .benchmark-subscriber { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+      .benchmark-row { display: grid; grid-template-columns: 2fr 1.3fr 1fr .5fr; min-height: 18px; border: 1px solid #dce2eb; }
+      .benchmark-cell { overflow: hidden; padding: 1px 3px; white-space: nowrap; }
+      .benchmark-cell-name { font-weight: 600; }
+      .benchmark-cell-value { text-align: right; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+      @media (max-width: 900px) {
+        .hero { grid-template-columns: 1fr; gap: 44px; padding-top: 60px; }
+        .three-col { grid-template-columns: 1fr; }
+        .controls { grid-template-columns: 1fr 1fr; }
+        .source-links ul { columns: 1; }
+      }
+      @media (max-width: 680px) {
+        .nav { width: min(100% - 28px, 1120px); }
+        .nav-links a:not(:last-child) { display: none; }
+        main { width: min(100% - 28px, 1120px); }
+        .hero { padding: 52px 0 58px; }
+        h1 { font-size: 43px; }
+        .hero-results { grid-template-columns: 1fr; }
+        .hero-result { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 18px; border-right: 0; border-bottom: 1px solid var(--line); }
+        .hero-result:last-child { border-bottom: 0; }
+        .hero-result .value { grid-row: span 2; margin: 0; }
+        .section { padding: 58px 0; }
+        .two-col, .measure-grid, .glossary { grid-template-columns: 1fr; }
+        .controls { grid-template-columns: 1fr; }
+        .mechanism { grid-template-columns: 1fr; }
+        .mechanism-arrow { transform: rotate(90deg); }
+        .commit-strip-heading { display: block; }
+        .commit-strip-heading span { display: block; margin-top: 4px; }
+      }
+      @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <nav class="nav" aria-label="Primary navigation">
+        <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">A/R</span><span>Scheduling lab</span></a>
+        <div class="nav-links">
+          <a href="#model">Test model</a>
+          <a href="#run-lab">Run it</a>
+          <a href="#mechanism">Why it happens</a>
+          <a href="#glossary">Glossary</a>
+          <a href="https://github.com/superliaye/apollo-react-commit-benchmark">GitHub</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top">
+        <div>
+          <p class="eyebrow">Reproducible browser benchmark · React 18.3.1</p>
+          <h1>One cache write. Same data. 8× more React commits.</h1>
+          <p class="lede">
+            With eight components watching the same query, Apollo Client 3.6.9 finishes in two React commits.
+            Apollo Client 3.14.1 takes sixteen. A narrow diagnostic intervention brings it back to two.
+          </p>
+          <div class="hero-actions">
+            <a class="button-link button-primary" href="#run-lab">Run the 96-sample proof</a>
+            <a class="button-link button-secondary" href="#model">Understand the test first</a>
+          </div>
+          <p class="hero-note">The stable result is the commit pattern. Millisecond timings depend on your browser and machine.</p>
+        </div>
+
+        <aside class="result-panel" aria-label="Reference result at eight subscribers">
+          <div class="result-panel-header"><span>Eight subscribers</span><span class="reference-tag">REFERENCE RUN</span></div>
+          <div class="hero-results">
+            <div class="hero-result">
+              <span class="version">Apollo 3.6.9<br />unchanged package</span>
+              <strong class="value" id="headline-369">2</strong>
+              <span class="unit">React commits</span>
+            </div>
+            <div class="hero-result regressed">
+              <span class="version">Apollo 3.14.1<br />unchanged package</span>
+              <strong class="value" id="headline-314">16</strong>
+              <span class="unit">React commits</span>
+            </div>
+            <div class="hero-result restored">
+              <span class="version">Apollo 3.14.1<br />diagnostic batching</span>
+              <strong class="value" id="headline-patched">2</strong>
+              <span class="unit">React commits</span>
+            </div>
+          </div>
+          <div class="mini-trace">
+            <p>Each segment is one commit. Blue updates query consumers; amber publishes layout-derived parent state.</p>
+            <div class="mini-strip" aria-label="Apollo 3.6.9: two commits"><span></span><span></span></div>
+            <div class="mini-strip fragmented" aria-label="Apollo 3.14.1: sixteen commits">
+              <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="mini-strip" aria-label="Apollo 3.14.1 with diagnostic batching: two commits"><span></span><span></span></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section" id="model" aria-labelledby="model-title">
+        <div class="section-heading">
+          <p class="eyebrow">01 · Test model</p>
+          <h2 id="model-title">What ordinary Apollo code this represents</h2>
+          <p>
+            Several mounted components call <code>useQuery</code> for the same query. When Apollo publishes one new cached result,
+            every component observes it and React updates the shared screen.
+          </p>
+        </div>
+
+        <div class="two-col">
+          <div class="card code-card">
+            <div class="code-title"><span class="code-dot" aria-hidden="true"></span>ordinary-app-shape.tsx</div>
+            <pre aria-label="Example Apollo and React code"><code><span class="code-keyword">function</span> ResultPanel() {
+  <span class="code-keyword">const</span> { data } = <span class="code-call">useQuery</span>(SHARED_ITEM, {
+    fetchPolicy: "cache-only"
+  });
+
+  <span class="code-call">useLayoutEffect</span>(() =&gt; {
+    publishMeasuredWidth(ref.current.offsetWidth);
+  }, [data]);
+
+  <span class="code-keyword">return</span> &lt;ResultRows data={data} ref={ref} /&gt;;
+}
+
+// The result is already available; network time is over.
+client.cache.<span class="code-call">writeQuery</span>({
+  query: SHARED_ITEM,
+  data: nextResult
+});</code></pre>
+          </div>
+
+          <div>
+            <ol class="flow-list">
+              <li>
+                One <a class="term" href="#term-cache-write">Apollo cache write</a> publishes a result that is already in memory.
+                It is the benchmark's starting signal, so no network request is measured.
+              </li>
+              <li>
+                Eight <a class="term" href="#term-subscriber">subscribers</a>—mounted query consumers waiting for updates—observe
+                the same result through eight <code>useQuery</code> calls.
+              </li>
+              <li>
+                Each consumer performs a real <a class="term" href="#term-component-render">component render</a>, updates 40 DOM
+                rows, then reads the resulting geometry.
+              </li>
+              <li>
+                Each consumer publishes <a class="term" href="#term-derived-state">derived state</a>—state calculated from the
+                rendered layout—to one parent summary.
+              </li>
+            </ol>
+            <div class="callout" style="margin-top: 18px">
+              <strong>Why include the parent update?</strong>
+              <p>Real screens often measure children, register rows, or update a shared summary after data renders. That second update makes extra commit boundaries carry real downstream React work.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="measurement" aria-labelledby="measurement-title">
+        <div class="section-heading">
+          <p class="eyebrow">02 · Measurement boundary</p>
+          <h2 id="measurement-title">From cache publication to committed, paintable UI</h2>
+          <p>The clock starts immediately before <code>cache.writeQuery</code>. It stops only after every subscriber shows the new value and the parent has processed every derived update.</p>
+        </div>
+
+        <div class="measure-grid">
+          <article class="measure">
+            <span class="measure-icon" aria-hidden="true">C</span>
+            <div><h3><a class="term" href="#term-react-commit">React commits</a></h3><p>How many times React applies a completed batch of changes to the DOM. This is the deterministic primary signal.</p></div>
+          </article>
+          <article class="measure">
+            <span class="measure-icon" aria-hidden="true">R</span>
+            <div><h3>Subscriber renders</h3><p>How many query-consumer component functions React calls during the measured update.</p></div>
+          </article>
+          <article class="measure">
+            <span class="measure-icon" aria-hidden="true">CPU</span>
+            <div><h3><a class="term" href="#term-react-cpu">React CPU</a></h3><p>The sum of React Profiler's <code>actualDuration</code> values across measured commits.</p></div>
+          </article>
+          <article class="measure">
+            <span class="measure-icon" aria-hidden="true">px</span>
+            <div><h3><a class="term" href="#term-geometry-read">Geometry reads</a></h3><p>Real <code>getBoundingClientRect</code> and layout-width reads after the DOM changes.</p></div>
+          </article>
+          <article class="measure">
+            <span class="measure-icon" aria-hidden="true">FC</span>
+            <div><h3><a class="term" href="#term-final-commit">Final commit</a></h3><p>Elapsed time until every query value and every derived parent update has committed.</p></div>
+          </article>
+          <article class="measure">
+            <span class="measure-icon" aria-hidden="true">FP</span>
+            <div><h3><a class="term" href="#term-paint">Final paint</a></h3><p>Elapsed time through two animation frames after the final commit, used as a conservative paintable-UI boundary.</p></div>
+          </article>
+        </div>
+
+        <div class="two-col" style="margin-top: 20px">
+          <div class="callout">
+            <strong>Included</strong>
+            <p>Cache publication, Apollo <a class="term" href="#term-observer-delivery">observer delivery</a>, React calculating the next UI, DOM mutation, <a class="term" href="#term-layout-effect">layout effects</a>, geometry reads, derived parent updates, final commit, and two animation frames.</p>
+          </div>
+          <div class="callout caution">
+            <strong>Excluded</strong>
+            <p>Network time, server time, and application-specific business logic. There is no synthetic busy loop or artificial “commit tax.”</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="arms" aria-labelledby="arms-title">
+        <div class="section-heading">
+          <p class="eyebrow">03 · Three-arm experiment</p>
+          <h2 id="arms-title">Change one delivery boundary, keep the data identical</h2>
+          <p>
+            <a class="term" href="#term-stock">Stock</a> means the published package is used unchanged. The third arm applies
+            <a class="term" href="#term-diagnostic-patch">diagnostic batching</a>: an experimental probe that groups pending
+            React-facing deliveries so we can test causality.
+          </p>
+        </div>
+
+        <div class="three-col">
+          <article class="card arm">
+            <span class="arm-label">Control A</span>
+            <h3>Apollo 3.6.9 stock</h3>
+            <p>The older published package. Compatible local state updates remain pending long enough to coalesce into one query-result commit, followed by one derived-state commit.</p>
+          </article>
+          <article class="card arm regressed">
+            <span class="arm-label">Treatment B</span>
+            <h3>Apollo 3.14.1 stock</h3>
+            <p>The newer published package. Each separately delivered external-store change can commit synchronously before the next delivery, fragmenting one logical result across many commits.</p>
+          </article>
+          <article class="card arm diagnostic">
+            <span class="arm-label">Causal probe C</span>
+            <h3>3.14.1 + diagnostic batching</h3>
+            <p>The same 3.14.1 package and values, with observer callbacks drained in one shared host task. It tests whether delivery separation causes the extra commits.</p>
+          </article>
+        </div>
+        <div class="callout caution" style="margin-top: 20px">
+          <strong>This patch is evidence, not a release recommendation.</strong>
+          <p>It relies on Apollo private objects and adds a task of queueing delay. A durable fix should preserve the ordering guarantee introduced by Apollo PR #11083 while coordinating publication through a supported library boundary.</p>
+        </div>
+      </section>
+
+      <section class="section" id="run-lab" aria-labelledby="run-title">
+        <div class="section-heading">
+          <p class="eyebrow">04 · Live experiment</p>
+          <h2 id="run-title">Run the proof in this browser</h2>
+          <p>The default suite downloads exact package versions, discards warmups (untimed practice runs), and runs 96 measured samples in mirrored order to reduce drift from run position.</p>
+        </div>
+
+        <div class="lab-shell">
+          <div class="lab-header">
+            <h3>Benchmark controls</h3>
+            <p>Defaults reproduce the reviewed reference run. Change them only after you have a passing baseline.</p>
+          </div>
+          <div class="controls">
+            <label for="blocks"><strong>Balanced blocks</strong><input id="blocks" type="number" min="2" max="10" step="2" value="4" /></label>
+            <label for="subscribers"><strong>Subscriber counts</strong><input id="subscribers" value="1,2,4,8" /></label>
+            <label for="rows"><strong>DOM rows per subscriber</strong><input id="rows" type="number" min="0" max="2000" value="40" /></label>
+            <button class="button-primary" id="run" type="button">Run proof</button>
+          </div>
+          <div class="control-help">
+            A <a class="term" href="#term-balanced-block">balanced block</a> runs the three arms forward and backward (<span class="mono">ABCCBA</span> or <span class="mono">CBAABC</span>).
+            One subscriber is the negative control—the case where every arm should match; larger counts test amplification. Rows add ordinary DOM work without adding fake CPU delay.
+          </div>
+          <p id="status" class="status" aria-live="polite">Ready. The first run downloads exact package versions from esm.sh.</p>
+        </div>
+
+        <section class="verdict-card" aria-labelledby="verdict-title">
+          <h3 id="verdict-title">Proof verdict</h3>
+          <p id="verdict" class="verdict pending">Run the benchmark. A result is accepted only if every required condition passes.</p>
+          <p>
+            A <a class="term" href="#term-proof-condition">proof condition</a> is a rule that must remain true for the run to pass.
+            The checks cover exact package versions, identical final data, every <a class="term" href="#term-logical-notification">logical notification</a>
+            and <a class="term" href="#term-observer-delivery">observer delivery</a>, <a class="term" href="#term-host-task">host-task</a>
+            and <a class="term" href="#term-microtask">microtask</a> order, no dropped values, and the expected
+            <a class="term" href="#term-react-commit">commit</a> progression.
+          </p>
+          <ul id="proof-conditions"></ul>
+          <p id="environment" class="environment"></p>
+        </section>
+      </section>
+
+      <section class="section" id="results" aria-labelledby="results-title">
+        <div class="section-heading">
+          <p class="eyebrow">05 · Results</p>
+          <h2 id="results-title">Read commit count first, timing second</h2>
+          <p>
+            Commit count and intermediate state progression are deterministic checks. Timing uses <a class="term" href="#term-p50">p50</a>,
+            the middle observed sample after sorting, and will vary with hardware and browser activity.
+          </p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Newcomer summary</caption>
+            <thead><tr><th>Subscribers</th><th>Experiment arm</th><th>Valid samples</th><th>React commits, mean (min–max)</th><th>Subscriber renders, mean</th><th>Final commit p50</th><th>Final paint p50</th></tr></thead>
+            <tbody id="summary-body"><tr class="placeholder"><td colspan="7">Run the benchmark to populate live results.</td></tr></tbody>
+          </table>
+        </div>
+        <p class="fine-print">“Final paint” includes two animation frames, so it often reflects the display cadence more than Apollo work. Use it as a completion boundary, not a package-only CPU measurement.</p>
+
+        <details>
+          <summary>Advanced instrumentation table</summary>
+          <div>
+            <p>
+              A <a class="term" href="#term-host-task">host task</a> is one browser event-loop turn. A
+              <a class="term" href="#term-logical-notification">logical notification</a> is one Apollo result publication to one observer.
+              A <a class="term" href="#term-delivery-batch">delivery batch</a> is the group of observer callbacks drained together by the diagnostic arm.
+              <a class="term" href="#term-p90">p90</a> is the value at or below which 90% of samples fall; “mean” is the arithmetic average.
+              The unchanged packages do not report diagnostic batch counts, so their batch cells show an em dash.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <caption>Scheduling and rendering counters</caption>
+                <thead><tr><th>Subscribers</th><th>Experiment arm</th><th>Host tasks</th><th>Logical notifications</th><th>Delivery batches</th><th>Largest batch</th><th>Derived layout effects</th><th>React CPU mean</th><th>Geometry-read mean</th><th>Final commit p90</th><th>Final paint p90</th></tr></thead>
+                <tbody id="advanced-summary-body"><tr class="placeholder"><td colspan="11">Run the benchmark to populate live results.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="section" id="trace" aria-labelledby="trace-title">
+        <div class="section-heading">
+          <p class="eyebrow">06 · Commit trace</p>
+          <h2 id="trace-title">See one result fragment across the screen</h2>
+          <p>
+            Each box below is one measured React commit. A <a class="term" href="#term-snapshot">snapshot</a> such as
+            <code>11110000</code> means four of eight subscribers show the new value while four still show the old value.
+          </p>
+        </div>
+
+        <div class="trace-legend" aria-label="Commit trace legend">
+          <span class="legend-key"><span class="legend-swatch" aria-hidden="true"></span>Q: query consumers commit</span>
+          <span class="legend-key"><span class="legend-swatch derived" aria-hidden="true"></span>D: derived parent state commits</span>
+        </div>
+        <div class="commit-strips" id="trace-strips">
+          <div class="commit-strip-row"><div class="commit-strip-heading"><strong>Apollo 3.6.9 stock</strong><span>2 commits</span></div><div class="commit-strip"><span class="commit-cell">Q1</span><span class="commit-cell derived">D1</span></div></div>
+          <div class="commit-strip-row"><div class="commit-strip-heading"><strong>Apollo 3.14.1 stock</strong><span>16 commits</span></div><div class="commit-strip"><span class="commit-cell">Q1</span><span class="commit-cell derived">D1</span><span class="commit-cell">Q2</span><span class="commit-cell derived">D2</span><span class="commit-cell">Q3</span><span class="commit-cell derived">D3</span><span class="commit-cell">Q4</span><span class="commit-cell derived">D4</span><span class="commit-cell">Q5</span><span class="commit-cell derived">D5</span><span class="commit-cell">Q6</span><span class="commit-cell derived">D6</span><span class="commit-cell">Q7</span><span class="commit-cell derived">D7</span><span class="commit-cell">Q8</span><span class="commit-cell derived">D8</span></div></div>
+          <div class="commit-strip-row"><div class="commit-strip-heading"><strong>Apollo 3.14.1 + diagnostic batching</strong><span>2 commits</span></div><div class="commit-strip"><span class="commit-cell">Q1</span><span class="commit-cell derived">D1</span></div></div>
+        </div>
+
+        <details>
+          <summary>Commit-by-commit snapshots</summary>
+          <div class="table-wrap">
+            <table>
+              <caption>Representative sample at the largest subscriber count</caption>
+              <thead><tr><th>Experiment arm</th><th>Commit</th><th>Snapshot after render</th><th>Derived version</th><th>Elapsed ms</th></tr></thead>
+              <tbody id="trace-body"><tr class="placeholder"><td colspan="5">Run the benchmark to populate the trace.</td></tr></tbody>
+            </table>
+          </div>
+        </details>
+        <details><summary>Raw, reviewable JSON from this run</summary><pre id="raw-result">Run the benchmark to generate JSON.</pre></details>
+      </section>
+
+      <section class="section" id="mechanism" aria-labelledby="mechanism-title">
+        <div class="section-heading">
+          <p class="eyebrow">07 · Source-traceable mechanism</p>
+          <h2 id="mechanism-title">Why the newer version can split one update</h2>
+          <p>
+            In this reproduction, each mounted <code>useQuery</code> consumer owns one watched
+            <a class="term" href="#term-observable-query"><code>ObservableQuery</code></a>. One cache write with eight consumers
+            therefore schedules eight separate zero-delay <a class="term" href="#term-notification">notification</a> tasks in both versions.
+            The important difference is the kind of React update each delivered result requests.
+          </p>
+        </div>
+
+        <div class="mechanism">
+          <article class="mechanism-path">
+            <span class="arm-label">Apollo 3.6.9</span>
+            <h3>Ordinary local state update</h3>
+            <ol>
+              <li>Apollo delivers the new query result.</li>
+              <li><code>setResult</code> calls a local <code>useState</code> setter.</li>
+              <li>Outside a browser event, React assigns ordinary <a class="term" href="#term-default-lane">DefaultLane</a> priority.</li>
+              <li>Compatible pending work can coalesce before React commits.</li>
+            </ol>
+          </article>
+          <div class="mechanism-arrow" aria-hidden="true">→</div>
+          <article class="mechanism-path new">
+            <span class="arm-label">Apollo 3.14.1</span>
+            <h3>External-store consistency update</h3>
+            <p>“External store” means state owned outside React—in this case, Apollo's query store. React checks that the rendered snapshot stays current.</p>
+            <ol>
+              <li>Apollo delivers the same new query result.</li>
+              <li><code>setResult</code> calls the <code>useSyncExternalStore</code> change handler.</li>
+              <li>React's <code>forceStoreRerender</code> assigns synchronous <a class="term" href="#term-sync-lane">SyncLane</a> priority.</li>
+              <li>A React microtask can commit before Apollo's next separate delivery task.</li>
+            </ol>
+          </article>
+        </div>
+
+        <div class="callout" style="margin-top: 22px">
+          <strong>Why React 18 automatic batching does not merge these commits</strong>
+          <p>Automatic batching groups compatible updates in the same scheduling window. Here, Apollo delivers observers in separate <a class="term" href="#term-host-task">host tasks</a>, and each 3.14.1 external-store callback schedules synchronous consistency work. React's <a class="term" href="#term-microtask">microtask</a> can flush that work before the next host task begins.</p>
+        </div>
+
+        <div class="source-links">
+          <h3>Read the public source trail</h3>
+          <ul>
+            <li><a href="https://github.com/apollographql/apollo-client/pull/11083">Apollo PR #11083: the behavior change and its correctness motivation</a></li>
+            <li><a href="https://github.com/apollographql/apollo-client/blob/v3.6.9/src/react/hooks/useQuery.ts#L68-L77">Apollo 3.6.9 local state setter</a></li>
+            <li><a href="https://github.com/apollographql/apollo-client/blob/v3.6.9/src/react/hooks/useQuery.ts#L137-L160">Apollo 3.6.9 subscription path</a></li>
+            <li><a href="https://github.com/apollographql/apollo-client/blob/v3.14.1/src/react/hooks/useQuery.ts#L415-L450">Apollo 3.14.1 passes the store-change handler</a></li>
+            <li><a href="https://github.com/apollographql/apollo-client/blob/v3.14.1/src/react/hooks/useQuery.ts#L688-L719">Apollo 3.14.1 invokes it from <code>setResult</code></a></li>
+            <li><a href="https://github.com/facebook/react/blob/v18.3.1/packages/react-reconciler/src/ReactFiberHooks.old.js#L1478-L1506">React 18.3.1 external-store updates use <code>SyncLane</code></a></li>
+            <li><a href="https://github.com/apollographql/apollo-client/issues/10364">Apollo issue #10364: duplicate query subscribers and commits</a></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section" id="glossary" aria-labelledby="glossary-title">
+        <div class="section-heading">
+          <p class="eyebrow">08 · Glossary</p>
+          <h2 id="glossary-title">Terms used in this lab</h2>
+          <p>Short definitions for the Apollo, browser-scheduling, React, and statistics language visible above.</p>
+        </div>
+
+        <dl class="glossary">
+          <div id="term-stock"><dt>Stock</dt><dd>An exact published package used without modifications. The benchmark loads Apollo Client 3.6.9 and 3.14.1 directly from esm.sh.</dd></div>
+          <div id="term-diagnostic-patch"><dt>Diagnostic patch / diagnostic batching</dt><dd>A deliberately narrow experimental change used to test a causal hypothesis. Passing the test supports the mechanism; it does not by itself make the patch safe for production.</dd></div>
+          <div id="term-subscriber"><dt>Subscriber</dt><dd>A mounted consumer registered to receive query-result changes. In this benchmark, each subscriber is one React component calling <code>useQuery</code>.</dd></div>
+          <div id="term-cache-write"><dt>Apollo cache write</dt><dd>A synchronous call that places a GraphQL-shaped result into Apollo's in-memory cache and starts publication to interested queries. The benchmark uses <code>cache.writeQuery</code>.</dd></div>
+          <div id="term-observable-query"><dt><code>ObservableQuery</code></dt><dd>Apollo's live query object. It tracks a query result and sends changes to registered observers, including the subscription behind <code>useQuery</code>.</dd></div>
+          <div id="term-observer-delivery"><dt>Observer delivery / <code>observer.next</code></dt><dd>The callback boundary where one <code>ObservableQuery</code> hands a result to one registered observer.</dd></div>
+          <div id="term-notification"><dt>Notification</dt><dd>A signal from Apollo that a watched query may have a new result. This lab distinguishes the signal from the later observer callback that reaches React.</dd></div>
+          <div id="term-host-task"><dt>Host task</dt><dd>One browser event-loop turn created by work such as <code>setTimeout(..., 0)</code>. The browser may run microtasks before starting the next host task.</dd></div>
+          <div id="term-microtask"><dt>Microtask</dt><dd>High-priority queued work that runs after the current JavaScript stack and before the browser starts the next host task. Promises and React's synchronous flush scheduling can use microtasks.</dd></div>
+          <div id="term-react-commit"><dt>React commit</dt><dd>The phase where React applies one completed render result to the DOM and runs commit-phase effects. Several component renders may belong to one commit.</dd></div>
+          <div id="term-component-render"><dt>Component render</dt><dd>One call of a React function component while React calculates the next UI. Rendering computes changes; committing applies them.</dd></div>
+          <div id="term-derived-state"><dt>Derived state</dt><dd>React state calculated from another result. Here, each subscriber reads its committed DOM geometry and increments a parent summary.</dd></div>
+          <div id="term-layout-effect"><dt>Layout effect</dt><dd>A <code>useLayoutEffect</code> callback that runs after React changes the DOM but before the browser paints. The benchmark uses it to read geometry and publish derived state.</dd></div>
+          <div id="term-react-cpu"><dt>React CPU</dt><dd>The sum of <code>React.Profiler</code> <code>actualDuration</code> values for measured commits. It covers React render work, not all JavaScript, layout, or browser paint cost.</dd></div>
+          <div id="term-geometry-read"><dt>Geometry read</dt><dd>A synchronous DOM measurement such as <code>getBoundingClientRect</code>. It can require the browser to bring layout information up to date.</dd></div>
+          <div id="term-final-commit"><dt>Final commit</dt><dd>The first commit after which all subscribers display the new result and the parent has processed every derived update.</dd></div>
+          <div id="term-paint"><dt>Paint / final paint</dt><dd>Paint is when the browser turns committed DOM and styles into pixels. This lab's final-paint boundary is two animation frames after the final commit; it does not use browser paint-timing internals.</dd></div>
+          <div id="term-p50"><dt>p50</dt><dd>The median: after sorting the measured values, half are at or below it and half are at or above it. The benchmark also reports p90 in the advanced table.</dd></div>
+          <div id="term-p90"><dt>p90</dt><dd>The value at or below which 90% of measured samples fall. It gives more visibility into slower samples than the median does.</dd></div>
+          <div id="term-balanced-block"><dt>Balanced block</dt><dd>A mirrored run sequence—<span class="mono">ABCCBA</span> or <span class="mono">CBAABC</span>—that gives each experiment arm comparable early, middle, and late positions.</dd></div>
+          <div id="term-proof-condition"><dt>Proof condition</dt><dd>An invariant that must pass for the run to be accepted, including version checks, final-value equality, exact delivery counts, task order, and commit progression.</dd></div>
+          <div id="term-snapshot"><dt>Snapshot</dt><dd>A compact record of what each subscriber displayed at a commit. For eight subscribers, <code>11110000</code> means four new values followed by four old values.</dd></div>
+          <div id="term-logical-notification"><dt>Logical notification</dt><dd>One result publication to one observer. All three arms must preserve exactly one logical notification per subscriber.</dd></div>
+          <div id="term-delivery-batch"><dt>Delivery batch</dt><dd>Observer callbacks drained together by the diagnostic scheduler. The patched arm must deliver every queued value, in order, in one batch.</dd></div>
+          <div id="term-default-lane"><dt><code>DefaultLane</code></dt><dd>React's ordinary priority lane for updates in this tested outside-event context. Compatible work can remain pending and coalesce before a commit.</dd></div>
+          <div id="term-sync-lane"><dt><code>SyncLane</code></dt><dd>React's synchronous priority lane. React 18.3.1's external-store consistency update explicitly uses it and schedules a prompt flush.</dd></div>
+        </dl>
+      </section>
+
+      <section class="section" id="limits" aria-labelledby="limits-title">
+        <div class="section-heading">
+          <p class="eyebrow">09 · Interpretation</p>
+          <h2 id="limits-title">What the benchmark does—and does not—establish</h2>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <h3>Established by the proof</h3>
+            <ul>
+              <li>The exact version-specific commit pattern is reproducible with public packages and a small React tree.</li>
+              <li>Every arm receives the same number and order of logical values and reaches identical final UI state.</li>
+              <li>Grouping only the React-facing deliveries removes the extra commit fragmentation in this scenario.</li>
+              <li>The observed task and microtask sequence matches the linked Apollo and React source paths.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Not established by the proof</h3>
+            <ul>
+              <li>That every application upgrading to Apollo 3.14.1 will become slower.</li>
+              <li>That browser timing deltas will have the same size on another screen or machine.</li>
+              <li>That all query shapes, fetch policies, or React versions follow this exact path.</li>
+              <li>That the diagnostic patch is a supported or production-ready fix.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-inner">
+        <p>Public, product-independent reproduction. Exact benchmark source, diagnostic intervention, and reference JSON are available in the <a href="https://github.com/superliaye/apollo-react-commit-benchmark">repository</a>.</p>
+      </div>
+    </footer>
+
+    <script type="module" src="./benchmark.js"></script>
+  </body>
+</html>

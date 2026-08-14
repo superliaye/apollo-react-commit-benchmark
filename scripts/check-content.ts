@@ -33,6 +33,8 @@ for (const path of requiredFiles) {
 }
 
 const html = publicTextFiles.get('index.html') ?? '';
+const readme = publicTextFiles.get('README.md') ?? '';
+const benchmarkSource = publicTextFiles.get('src/benchmark.ts') ?? '';
 const errors: string[] = [];
 
 const requiredElementIds = [
@@ -52,6 +54,8 @@ const requiredElementIds = [
   'headline-369',
   'headline-314',
   'headline-patched',
+  'headline-context',
+  'trace-provenance',
 ];
 
 for (const id of requiredElementIds) {
@@ -59,70 +63,96 @@ for (const id of requiredElementIds) {
 }
 
 const requiredSections = [
-  'With multiple consumers, Apollo 3.14.1 can split one cache update across more React commits.',
-  'Remove network noise. Keep the real React pressure.',
-  'Three arms ask one falsifiable question.',
   'Run the proof in this browser',
   'Watch one result spread across the screen.',
   'The code paths explain the measured task timeline.',
-  'What the benchmark does—and does not—establish',
 ];
 
 for (const section of requiredSections) {
   if (!html.includes(section)) errors.push(`index.html is missing required section: ${section}`);
 }
 
-const requiredGlossaryIds = [
-  'term-stock',
-  'term-diagnostic-patch',
-  'term-subscriber',
-  'term-cache-write',
-  'term-observable-query',
-  'term-observer-delivery',
-  'term-notification',
-  'term-host-task',
-  'term-microtask',
-  'term-react-commit',
-  'term-component-render',
-  'term-derived-state',
-  'term-layout-effect',
-  'term-react-cpu',
-  'term-geometry-read',
-  'term-final-commit',
-  'term-paint',
-  'term-p50',
-  'term-p90',
-  'term-balanced-block',
-  'term-proof-condition',
-  'term-snapshot',
-  'term-logical-notification',
-  'term-delivery-batch',
-  'term-default-lane',
-  'term-sync-lane',
-];
-
-for (const id of requiredGlossaryIds) {
-  if (!html.includes(`id="${id}"`)) errors.push(`index.html is missing glossary definition #${id}`);
+const expectedSectionIds = ['run-lab', 'trace', 'mechanism'];
+const actualSectionIds = [...html.matchAll(/<section\b[^>]*>/g)].flatMap((match) => {
+  const openingTag = match[0];
+  const classes = openingTag.match(/\bclass="([^"]*)"/)?.[1].split(/\s+/) ?? [];
+  if (!classes.includes('section')) return [];
+  return [openingTag.match(/\bid="([^"]+)"/)?.[1] ?? 'MISSING_ID'];
+});
+if (JSON.stringify(actualSectionIds) !== JSON.stringify(expectedSectionIds)) {
+  errors.push(
+    `index.html must contain only the three focused sections in order: ${expectedSectionIds.join(', ')}`,
+  );
 }
 
-const termLinks = [...html.matchAll(/href="#(term-[^"]+)"/g)].map((match) => match[1]);
-for (const id of new Set(termLinks)) {
-  if (!html.includes(`id="${id}"`)) errors.push(`Glossary link #${id} has no matching definition`);
+const resultsPosition = html.indexOf('id="summary-body"');
+const verdictPosition = html.search(/\bclass="[^"]*\bverdict-card\b[^"]*"/);
+if (resultsPosition < 0 || verdictPosition < 0 || resultsPosition > verdictPosition) {
+  errors.push('index.html must show benchmark numbers before the proof verdict');
+}
+
+const requiredReadmeContent = [
+  '## The result',
+  '## The causal chain',
+  '## What Q and D mean',
+  'Q — query-result commit',
+  'D — derived parent-state commit',
+  '## How the benchmark tests causality',
+  '## Why extra commits can cost time',
+  '## What is measured',
+  '## Run locally',
+  '## Scope',
+  'not another GraphQL result or another Apollo cache write',
+  'creates one delivery, not N',
+  'other query shapes, fetch policies, or React versions follow this exact path',
+];
+for (const content of requiredReadmeContent) {
+  if (!readme.includes(content)) errors.push(`README.md is missing required explanation: ${content}`);
 }
 
 const requiredClaims = [
-  'One cache write. Same final UI. 2 commits become 16.',
-  'The stable result is the commit pattern.',
-  'The effect requires multiple independently mounted <code>useQuery</code> calls.',
-  'lanes are not independently manipulated by a benchmark arm.',
-  'Memoized consumers with stable props and callbacks would reduce',
-  'An unavailable or mismatched package fails the proof',
-  'This patch is evidence, not a release recommendation.',
-  'no synthetic busy loop or artificial “commit tax.”',
+  'The 400-row default gives each React commit substantial real DOM work without adding a synthetic delay.',
+  'Numbers first',
+  'Q — query-result commit',
+  'D — derived parent-state commit',
+  'D models downstream React work; it is not another Apollo result.',
+  'p50 is the median measured sample.',
+  'Before a run, the strips illustrate the expected eight-subscriber pattern.',
+  'The live timeline verifies separate host tasks, observer callbacks, microtasks, and commits.',
 ];
 
 for (const claim of requiredClaims) {
   if (!html.includes(claim)) errors.push(`index.html is missing required interpretation: ${claim}`);
+}
+
+for (const id of ['headline-369', 'headline-314', 'headline-patched']) {
+  if (!new RegExp(`id="${id}"[^>]*>—<`).test(html)) {
+    errors.push(`index.html must leave #${id} empty until a browser run completes`);
+  }
+}
+if (!html.includes('id="headline-context">populated after Run proof<')) {
+  errors.push('index.html must label the pre-run headline values as unpopulated');
+}
+
+const removedSections = [
+  'With multiple consumers, Apollo 3.14.1 can split one cache update across more React commits.',
+  'Remove network noise. Keep the real React pressure.',
+  'Three arms ask one falsifiable question.',
+  'What the benchmark does—and does not—establish',
+  'Terms used in this lab',
+];
+for (const section of removedSections) {
+  if (html.includes(section)) errors.push(`index.html still duplicates README content: ${section}`);
+}
+
+const declaredIds = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]));
+for (const match of html.matchAll(/href="#([^"]+)"/g)) {
+  if (!declaredIds.has(match[1])) errors.push(`index.html links to missing anchor #${match[1]}`);
+}
+
+if (!/id="rows"[^>]*value="400"/.test(html)) errors.push('index.html must default to 400 DOM rows per subscriber');
+if (!benchmarkSource.includes("document.querySelector<HTMLInputElement>('#rows')?.value ?? '400'")) {
+  errors.push('src/benchmark.ts must fall back to 400 DOM rows per subscriber');
 }
 
 const allowedPublicHosts = new Set([
@@ -159,11 +189,18 @@ for (const [path, content] of publicTextFiles) {
 }
 
 const referenceResult = JSON.parse(publicTextFiles.get('results/reference-run.json') ?? '{}') as {
+  config?: { renderedRowsPerSubscriber?: number };
   proofPassed?: boolean;
   samples?: unknown[];
 };
 if (referenceResult.proofPassed !== true) errors.push('Reference result does not have proofPassed=true');
 if (referenceResult.samples?.length !== 96) errors.push('Reference result must contain exactly 96 samples');
+if (referenceResult.config?.renderedRowsPerSubscriber !== 40) {
+  errors.push('Reference result must retain its reviewed 40-row configuration');
+}
+if (!readme.includes('reviewed 96-sample result collected with 40 rows per subscriber')) {
+  errors.push('README.md must distinguish the 40-row reference result from the 400-row browser default');
+}
 
 if (errors.length > 0) {
   for (const error of errors) console.error(`ERROR: ${error}`);
@@ -171,7 +208,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `Content check passed: ${publicTextFiles.size} public text files, ${requiredGlossaryIds.length} glossary definitions, ${
-    new Set(termLinks).size
-  } linked terms, and a 96-sample passing reference run.`,
+  `Content check passed: ${publicTextFiles.size} public text files, three focused benchmark sections, a 400-row default, and a 96-sample passing reference run.`,
 );

@@ -705,7 +705,69 @@ var summarize = (config, samples) => {
     samples
   };
 };
+var headlineTargets = [
+  ["apollo-369-stock", "#headline-369"],
+  ["apollo-314-stock", "#headline-314"],
+  ["apollo-314-shared-delivery-patch", "#headline-patched"]
+];
+var initialTraceStripsMarkup = document.querySelector("#trace-strips")?.innerHTML ?? "";
+var pendingVerdict = "Run the benchmark. A result passes only if every required condition holds.";
+var resetLiveResults = (headlineContextText, traceProvenanceText) => {
+  for (const [, selector] of headlineTargets) {
+    const target = document.querySelector(selector);
+    if (target)
+      target.textContent = "—";
+  }
+  const headlineContext = document.querySelector("#headline-context");
+  if (headlineContext)
+    headlineContext.textContent = headlineContextText;
+  const verdict = document.querySelector("#verdict");
+  if (verdict) {
+    verdict.className = "verdict pending";
+    verdict.textContent = pendingVerdict;
+  }
+  const conditions = document.querySelector("#proof-conditions");
+  if (conditions)
+    conditions.replaceChildren();
+  const environment = document.querySelector("#environment");
+  if (environment)
+    environment.replaceChildren();
+  const summaryBody = document.querySelector("#summary-body");
+  if (summaryBody) {
+    summaryBody.innerHTML = '<tr class="placeholder"><td colspan="7">Run the benchmark to populate live results.</td></tr>';
+  }
+  const advancedSummaryBody = document.querySelector("#advanced-summary-body");
+  if (advancedSummaryBody) {
+    advancedSummaryBody.innerHTML = '<tr class="placeholder"><td colspan="11">Run the benchmark to populate live results.</td></tr>';
+  }
+  const traceStrips = document.querySelector("#trace-strips");
+  if (traceStrips)
+    traceStrips.innerHTML = initialTraceStripsMarkup;
+  const traceBody = document.querySelector("#trace-body");
+  if (traceBody) {
+    traceBody.innerHTML = '<tr class="placeholder"><td colspan="5">Run the benchmark to populate the trace.</td></tr>';
+  }
+  const traceProvenance = document.querySelector("#trace-provenance");
+  if (traceProvenance)
+    traceProvenance.textContent = traceProvenanceText;
+  const raw = document.querySelector("#raw-result");
+  if (raw)
+    raw.textContent = "Run the benchmark to generate JSON.";
+  window.__APOLLO_REACT_RENDER_RESULTS__ = undefined;
+};
 var renderResult = (result) => {
+  const largestSubscriberCount = Math.max(...result.config.subscriberCounts);
+  for (const [arm, selector] of headlineTargets) {
+    const row = result.summary.find((candidate) => candidate.arm === arm && candidate.subscriberCount === largestSubscriberCount);
+    const target = document.querySelector(selector);
+    if (row && target) {
+      target.textContent = Number.isInteger(row.commitsMean) ? row.commitsMean.toFixed(0) : row.commitsMean.toFixed(1);
+    }
+  }
+  const headlineContext = document.querySelector("#headline-context");
+  if (headlineContext) {
+    headlineContext.textContent = `${largestSubscriberCount} subscribers · live run${result.proofPassed ? "" : " · proof failed"}`;
+  }
   const verdict = document.querySelector("#verdict");
   if (verdict) {
     verdict.className = result.proofPassed ? "verdict pass" : "verdict fail";
@@ -727,7 +789,6 @@ var renderResult = (result) => {
       return `<tr><td>${row.subscriberCount}</td><td>${row.armLabel}</td><td>${row.hostTasksMean.toFixed(1)}</td><td>${row.logicalNotificationsMean.toFixed(1)}</td><td>${diagnosticBatchCount}</td><td>${diagnosticBatchSize}</td><td>${row.derivedLayoutEffectsMean.toFixed(1)}</td><td>${row.renderCpuMeanMillis.toFixed(2)} ms</td><td>${row.geometryReadMeanMillis.toFixed(2)} ms</td><td>${row.resultToCommitP90Millis.toFixed(2)} ms</td><td>${row.resultToPaintP90Millis.toFixed(2)} ms</td></tr>`;
     }).join("");
   }
-  const largestSubscriberCount = Math.max(...result.config.subscriberCounts);
   const representativeSamples = benchmarkArms.map((arm) => result.samples.find((candidate) => candidate.arm === arm.id && candidate.subscriberCount === largestSubscriberCount)).filter((sample) => sample !== undefined);
   const traceStrips = document.querySelector("#trace-strips");
   if (traceStrips) {
@@ -751,6 +812,10 @@ var renderResult = (result) => {
       const progression = [sample.baselineSnapshot, ...sample.distinctLayoutSnapshots].join(" → ");
       return `<div class="commit-strip-row"><div class="commit-strip-heading"><strong>${sample.armLabel}</strong><span>${sample.profilerCommitCount} commits</span></div><div class="commit-strip">${cells}</div><p class="trace-explanation">Visible query progression: <code>${progression}</code></p></div>`;
     }).join("");
+  }
+  const traceProvenance = document.querySelector("#trace-provenance");
+  if (traceProvenance) {
+    traceProvenance.textContent = `Measured representative samples at ${largestSubscriberCount} subscribers from this browser run.`;
   }
   const traceBody = document.querySelector("#trace-body");
   if (traceBody) {
@@ -780,11 +845,12 @@ var runButton = document.querySelector("#run");
 runButton?.addEventListener("click", async () => {
   const status = document.querySelector("#status");
   runButton.disabled = true;
+  resetLiveResults("run in progress…", "Run in progress. The strips below show the expected eight-subscriber pattern until live data completes.");
   try {
     const config = {
       blocks: Number(document.querySelector("#blocks")?.value ?? "4"),
       subscriberCounts: parseSubscriberCounts(document.querySelector("#subscribers")?.value ?? "1,2,4,8"),
-      renderedRowsPerSubscriber: Number(document.querySelector("#rows")?.value ?? "0")
+      renderedRowsPerSubscriber: Number(document.querySelector("#rows")?.value ?? "400")
     };
     if (!Number.isInteger(config.blocks) || config.blocks < 2 || config.blocks > 10 || config.blocks % 2 !== 0) {
       throw new Error("Balanced blocks must be an even integer from 2 to 10");
@@ -839,6 +905,7 @@ runButton?.addEventListener("click", async () => {
     if (status)
       status.textContent = result.proofPassed ? "Complete: proof passed." : "Complete: proof failed.";
   } catch (error) {
+    resetLiveResults("latest run did not complete", "The latest run did not complete. The strips below show the expected eight-subscriber pattern.");
     if (status)
       status.textContent = `Failed: ${error instanceof Error ? error.message : String(error)}`;
     throw error;

@@ -17,18 +17,18 @@ A **render** is React calling component functions to calculate the next UI. A **
 The problem is therefore not extra result data. Apollo 3.14.1 can split one logical screen update across more commit boundaries. Each boundary can repeat parent rendering, DOM mutation, layout effects, and downstream state work before reaching the same final screen.
 
 ```text
-one cache write reaches 8 independent useQuery consumers
+one cache write reaches N independent useQuery consumers
+measured at N = 1, 2, 4, and 8
 
-Apollo 3.6.9
-  delivery tasks 1…8 → updates stay pending and join root work
-  → Q: all 8 consumers → D: combined parent update       = 2 commits
+A · Apollo 3.6.9
+  [all N query consumers together] + [one parent update] = 2 at every tested N
 
-Apollo 3.14.1
-  task 1 → Q: 10000000 → D1
-  task 2 → Q: 11000000 → D2
-  …
-  task 8 → Q: 11111111 → D8                            = 16 commits
+B · Apollo 3.14.1
+  ([one query consumer] + [one parent update]) × N        = 2N at every tested N
+                                                           = 16 when N = 8
 ```
+
+Eight is not a special Apollo number. It is the largest default test case, chosen to make the scaling difference easy to see. The suite also runs 1, 2, and 4 consumers.
 
 React 18 automatic batching does not guarantee that synchronous external-store updates arriving in separate browser tasks will share a commit.
 

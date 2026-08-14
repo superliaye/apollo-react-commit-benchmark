@@ -59,7 +59,7 @@ for (const id of requiredElementIds) {
 }
 
 const requiredSections = [
-  'A render calculates the UI. A commit publishes it.',
+  'With multiple consumers, Apollo 3.14.1 can split one cache update across more React commits.',
   'Remove network noise. Keep the real React pressure.',
   'Three arms ask one falsifiable question.',
   'Run the proof in this browser',

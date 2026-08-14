@@ -190,20 +190,22 @@
       .signature-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 17px 20px; border-bottom: 1px solid var(--line); background: #fafbfe; }
       .signature-header strong { font-size: 15px; }
       .signature-header span { color: var(--muted); font: 500 12px "IBM Plex Mono", monospace; }
-      .delivery-grid { display: grid; grid-template-columns: 150px repeat(2, minmax(0, 1fr)); }
-      .delivery-cell { min-width: 0; padding: 15px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-      .delivery-cell:nth-child(3n) { border-right: 0; }
-      .delivery-cell.heading { color: var(--slate); background: #f7f8fc; font-size: 12px; font-weight: 650; }
-      .delivery-cell.task { color: var(--muted); background: #fbfcff; font: 500 12px "IBM Plex Mono", monospace; }
-      .delivery-cell p { margin: 0; color: var(--slate); font-size: 14px; }
-      .delivery-cell strong { color: var(--ink); }
-      .snapshot { display: inline-block; margin-top: 7px; padding: 3px 6px; border-radius: 5px; color: #3342a5; background: var(--blue-soft); font: 600 11px "IBM Plex Mono", monospace; }
-      .signature-outcomes { display: grid; grid-template-columns: 150px repeat(2, minmax(0, 1fr)); }
-      .signature-outcome-label { padding: 18px; color: var(--muted); background: #fbfcff; font: 600 11px "IBM Plex Mono", monospace; text-transform: uppercase; }
-      .signature-outcome { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 18px; border-left: 1px solid var(--line); }
+      .ab-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ab-path { min-width: 0; padding: 26px; }
+      .ab-path + .ab-path { border-left: 1px solid var(--line); }
+      .ab-path.regressed { background: #fffdf8; }
+      .ab-path h3 { margin-top: 5px; font-size: 22px; }
+      .ab-input { margin: 0 0 20px; color: var(--slate); font-size: 14px; }
+      .commit-flow { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; min-height: 68px; }
       .commit-token { display: inline-flex; min-height: 29px; align-items: center; padding: 5px 9px; border-radius: 6px; color: white; background: var(--blue); font: 600 11px "IBM Plex Mono", monospace; }
       .commit-token.derived { color: #3b2706; background: #e7a23b; }
-      .commit-total { margin-left: auto; font: 600 13px "IBM Plex Mono", monospace; }
+      .flow-multiplier { color: var(--ink); font: 600 18px "IBM Plex Mono", monospace; }
+      .ab-total { display: block; margin-top: 18px; font: 600 26px "IBM Plex Mono", monospace; letter-spacing: -.04em; }
+      .ab-total small { color: var(--muted); font: 500 12px "IBM Plex Mono", monospace; letter-spacing: 0; }
+      .ab-caption { margin: 8px 0 0; color: var(--slate); font-size: 14px; }
+      .why-eight { padding: 18px 20px; border-top: 1px solid var(--line); background: #fafbfe; }
+      .why-eight strong { display: block; margin-bottom: 4px; }
+      .why-eight p { margin: 0; color: var(--slate); }
       .precondition { margin-top: 20px; padding: 17px 20px; border: 1px solid #cbd3e6; border-radius: 11px; background: white; }
       .precondition strong { display: block; margin-bottom: 5px; color: var(--blue); font: 600 12px "IBM Plex Mono", monospace; letter-spacing: .04em; text-transform: uppercase; }
       .precondition p { margin: 0; }
@@ -303,7 +305,6 @@
         .three-col { grid-template-columns: 1fr; }
         .controls { grid-template-columns: 1fr 1fr; }
         .source-links ul { columns: 1; }
-        .delivery-grid, .signature-outcomes { grid-template-columns: 118px repeat(2, minmax(0, 1fr)); }
       }
       @media (max-width: 680px) {
         .nav { width: min(100% - 28px, 1120px); }
@@ -322,12 +323,10 @@
         .mechanism-arrow { transform: rotate(90deg); }
         .commit-strip-heading { display: block; }
         .commit-strip-heading span { display: block; margin-top: 4px; }
-        .delivery-grid { grid-template-columns: 72px repeat(2, minmax(0, 1fr)); }
-        .delivery-cell { padding: 10px; }
-        .signature-outcomes { grid-template-columns: 1fr; }
-        .signature-outcome-label { display: none; }
-        .signature-outcome { border-top: 1px solid var(--line); border-left: 0; }
-        .commit-total { width: 100%; margin: 4px 0 0; }
+        .ab-compare { grid-template-columns: 1fr; }
+        .ab-path + .ab-path { border-top: 1px solid var(--line); border-left: 0; }
+        .ab-path { padding: 22px 18px; }
+        .commit-flow { min-height: 0; }
         .mobile-table-hint { display: block; }
       }
       @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -403,11 +402,11 @@
       <section class="section" id="problem" aria-labelledby="problem-title">
         <div class="section-heading">
           <p class="eyebrow">The low-level mechanism</p>
-          <h2 id="problem-title">A render calculates the UI. A commit publishes it.</h2>
+          <h2 id="problem-title">With multiple consumers, Apollo 3.14.1 can split one cache update across more React commits.</h2>
           <p>
-            The regression is not extra result data. One logical result crosses more React commit boundaries. Every extra
-            boundary can repeat parent rendering, DOM mutation, layout effects, and downstream state work even though the
-            final screen is identical.
+            Both versions receive the same data and reach the same final UI. The difference is how many times React must
+            publish intermediate work along the way. Every extra commit can repeat parent rendering, DOM mutation, layout
+            effects, and downstream state work.
           </p>
         </div>
 
@@ -428,42 +427,41 @@
           </article>
         </div>
 
-        <div class="signature-map" aria-label="How eight separately delivered query updates commit in Apollo 3.6.9 and 3.14.1">
+        <div class="signature-map" aria-label="A/B comparison of the React commits produced by Apollo 3.6.9 and 3.14.1">
           <div class="signature-header">
-            <strong>One cache write reaches eight independent <code>useQuery</code> consumers</strong>
+            <strong>One cache write reaches N independent <code>useQuery</code> consumers</strong>
             <span>same values · same order · same final UI</span>
           </div>
-          <div class="delivery-grid">
-            <div class="delivery-cell heading">Apollo delivery</div>
-            <div class="delivery-cell heading">Apollo 3.6.9 · ordinary state update</div>
-            <div class="delivery-cell heading">Apollo 3.14.1 · external-store update</div>
-
-            <div class="delivery-cell task">task 1</div>
-            <div class="delivery-cell"><p><strong>The update stays pending.</strong> React can still combine compatible root work.</p></div>
-            <div class="delivery-cell"><p><strong>React commits consumer 1.</strong><br /><span class="snapshot">10000000</span></p></div>
-
-            <div class="delivery-cell task">task 2</div>
-            <div class="delivery-cell"><p><strong>The update joins pending work.</strong> No intermediate screen is committed.</p></div>
-            <div class="delivery-cell"><p><strong>React commits consumer 2.</strong><br /><span class="snapshot">11000000</span></p></div>
-
-            <div class="delivery-cell task">tasks 3–7</div>
-            <div class="delivery-cell"><p><strong>Updates keep joining.</strong> The root callback is reused.</p></div>
-            <div class="delivery-cell"><p><strong>Five more partial screens commit.</strong><br /><span class="snapshot">11100000 → … → 11111110</span></p></div>
-
-            <div class="delivery-cell task">task 8</div>
-            <div class="delivery-cell"><p><strong>All eight consumers commit together.</strong><br /><span class="snapshot">11111111</span></p></div>
-            <div class="delivery-cell"><p><strong>The final consumer commits.</strong><br /><span class="snapshot">11111111</span></p></div>
+          <div class="ab-compare">
+            <article class="ab-path">
+              <span class="arm-label">A · Apollo 3.6.9</span>
+              <h3>Two shared commits</h3>
+              <p class="ab-input">All N query consumers publish together.</p>
+              <div class="commit-flow" aria-label="One shared query-consumer commit followed by one shared parent-state commit">
+                <span class="commit-token">All N query consumers</span>
+                <span aria-hidden="true">+</span>
+                <span class="commit-token derived">One parent update</span>
+              </div>
+              <strong class="ab-total">2 commits</strong>
+              <p class="ab-caption">Observed at every tested N: 1, 2, 4, and 8.</p>
+            </article>
+            <article class="ab-path regressed">
+              <span class="arm-label">B · Apollo 3.14.1</span>
+              <h3>Two commits per consumer</h3>
+              <p class="ab-input">Each query consumer publishes separately.</p>
+              <div class="commit-flow" aria-label="One query-consumer commit plus one parent-state commit, repeated N times">
+                <span class="commit-token">One query consumer</span>
+                <span aria-hidden="true">+</span>
+                <span class="commit-token derived">One parent update</span>
+                <span class="flow-multiplier" aria-label="repeated N times">× N</span>
+              </div>
+              <strong class="ab-total">2N commits <small>16 when N = 8</small></strong>
+              <p class="ab-caption">Observed at each tested count. At N = 1, both versions produce two commits.</p>
+            </article>
           </div>
-          <div class="signature-outcomes">
-            <div class="signature-outcome-label">Measured outcome</div>
-            <div class="signature-outcome">
-              <span class="commit-token">Q · all 8</span><span class="commit-token derived">D · combined</span>
-              <span class="commit-total">2 commits</span>
-            </div>
-            <div class="signature-outcome">
-              <span class="commit-token">Q × 8</span><span class="commit-token derived">D × 8</span>
-              <span class="commit-total">16 commits</span>
-            </div>
+          <div class="why-eight">
+            <strong>Why eight in the headline result?</strong>
+            <p>Eight only makes the scaling difference easy to see. It is the largest default case; the suite also tests 1, 2, and 4 consumers.</p>
           </div>
         </div>
 

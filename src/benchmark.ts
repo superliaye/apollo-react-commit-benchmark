@@ -59,6 +59,17 @@ interface ReactDomRuntime {
   version: string;
 }
 
+type ReactMajor = '18' | '19';
+
+interface ReactRuntimeSelection {
+  major: ReactMajor;
+  label: string;
+  reactVersion: string;
+  reactDomPackageVersion: string;
+  expectedReactDomVersion: string;
+  requestWarning: string | null;
+}
+
 type BrowserSetTimeout = (handler: TimerHandler, timeout?: number, ...args: unknown[]) => number;
 
 interface BenchmarkArm {
@@ -181,6 +192,8 @@ interface BenchmarkResult {
   generatedAt: string;
   config: BenchmarkConfig;
   environment: {
+    selectedReactMajor: ReactMajor;
+    selectedReactLabel: string;
     react: string;
     reactDom: string;
     userAgent: string;
@@ -193,6 +206,7 @@ interface BenchmarkResult {
 
 declare global {
   interface Window {
+    __APOLLO_REACT_BENCHMARK_RUNTIME__?: ReactRuntimeSelection;
     __APOLLO_REACT_RENDER_RESULTS__?: BenchmarkResult;
   }
 }
@@ -222,8 +236,12 @@ const apolloUrls: Record<ApolloVersion, string> = {
   '3.6.9': 'https://esm.sh/@apollo/client@3.6.9?bundle&external=react&target=es2022',
   '3.14.1': 'https://esm.sh/@apollo/client@3.14.1?bundle&external=react&target=es2022',
 };
-const expectedReactVersion = '18.3.1';
-const expectedReactDomProfilingVersion = '18.3.1-next-f1338f8080-20240426';
+const selectedReactRuntime = window.__APOLLO_REACT_BENCHMARK_RUNTIME__;
+if (!selectedReactRuntime) {
+  throw new Error('React runtime configuration was not installed before the benchmark module loaded');
+}
+const expectedReactVersion = selectedReactRuntime.reactVersion;
+const expectedReactDomProfilingVersion = selectedReactRuntime.expectedReactDomVersion;
 
 const runtimeCache = new Map<ApolloVersion, ApolloRuntime>();
 const loadApollo = async (version: ApolloVersion): Promise<ApolloRuntime> => {
@@ -644,7 +662,7 @@ const runSample = async (
     }
     if (react.version !== expectedReactVersion || reactDom.version !== expectedReactDomProfilingVersion) {
       validationErrors.push(
-        `Expected React ${expectedReactVersion} and the React 18.3.1 profiling renderer ${expectedReactDomProfilingVersion}, loaded ${react.version}/${reactDom.version}`,
+        `Expected React ${expectedReactVersion} and its profiling renderer ${expectedReactDomProfilingVersion}, loaded ${react.version}/${reactDom.version}`,
       );
     }
     if (baselineSnapshot !== '0'.repeat(subscriberCount)) {
@@ -963,6 +981,8 @@ const summarize = (config: BenchmarkConfig, samples: Sample[]): BenchmarkResult 
     generatedAt: new Date().toISOString(),
     config,
     environment: {
+      selectedReactMajor: selectedReactRuntime.major,
+      selectedReactLabel: selectedReactRuntime.label,
       react: react.version,
       reactDom: reactDom.version,
       userAgent: navigator.userAgent,
@@ -982,6 +1002,42 @@ const headlineTargets: Array<[BenchmarkArmId, string]> = [
 
 const initialTraceStripsMarkup = document.querySelector('#trace-strips')?.innerHTML ?? '';
 const pendingVerdict = 'Run the benchmark. A result passes only if every required condition holds.';
+
+const reactVersionSelect = document.querySelector<HTMLSelectElement>('#react-version');
+if (reactVersionSelect) {
+  let runtimeSwitchPending = false;
+  window.addEventListener('pageshow', () => {
+    reactVersionSelect.value = selectedReactRuntime.major;
+    if (!runtimeSwitchPending) return;
+    runtimeSwitchPending = false;
+    reactVersionSelect.disabled = false;
+    const runButton = document.querySelector<HTMLButtonElement>('#run');
+    if (runButton) runButton.disabled = false;
+    const status = document.querySelector('#status');
+    if (status) {
+      status.textContent = `${selectedReactRuntime.requestWarning ? `${selectedReactRuntime.requestWarning} ` : ''}Ready. ${selectedReactRuntime.label} selected; the runtime change was canceled.`;
+    }
+  });
+  reactVersionSelect.addEventListener('change', () => {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('react', reactVersionSelect.value);
+    for (const [parameter, selector] of [
+      ['blocks', '#blocks'],
+      ['subscribers', '#subscribers'],
+      ['rows', '#rows'],
+    ] as const) {
+      const control = document.querySelector<HTMLInputElement>(selector);
+      if (control) nextUrl.searchParams.set(parameter, control.value);
+    }
+    reactVersionSelect.disabled = true;
+    const runButton = document.querySelector<HTMLButtonElement>('#run');
+    if (runButton) runButton.disabled = true;
+    const status = document.querySelector('#status');
+    if (status) status.textContent = `Reloading with React ${reactVersionSelect.value}…`;
+    runtimeSwitchPending = true;
+    window.location.assign(nextUrl);
+  });
+}
 
 const resetLiveResults = (headlineContextText: string, traceProvenanceText: string): void => {
   for (const [, selector] of headlineTargets) {
@@ -1033,7 +1089,7 @@ const renderResult = (result: BenchmarkResult): void => {
   }
   const headlineContext = document.querySelector('#headline-context');
   if (headlineContext) {
-    headlineContext.textContent = `${largestSubscriberCount} subscribers · live run${
+    headlineContext.textContent = `${largestSubscriberCount} subscribers · ${result.environment.selectedReactLabel} · live run${
       result.proofPassed ? '' : ' · proof failed'
     }`;
   }
@@ -1188,6 +1244,7 @@ const runButton = document.querySelector<HTMLButtonElement>('#run');
 runButton?.addEventListener('click', async () => {
   const status = document.querySelector('#status');
   runButton.disabled = true;
+  if (reactVersionSelect) reactVersionSelect.disabled = true;
   resetLiveResults(
     'run in progress…',
     'Run in progress. The strips below show the expected eight-subscriber pattern until live data completes.',
@@ -1265,6 +1322,7 @@ runButton?.addEventListener('click', async () => {
     throw error;
   } finally {
     runButton.disabled = false;
+    if (reactVersionSelect) reactVersionSelect.disabled = false;
   }
 });
 

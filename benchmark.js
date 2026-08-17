@@ -140,8 +140,12 @@ var apolloUrls = {
   "3.6.9": "https://esm.sh/@apollo/client@3.6.9?bundle&external=react&target=es2022",
   "3.14.1": "https://esm.sh/@apollo/client@3.14.1?bundle&external=react&target=es2022"
 };
-var expectedReactVersion = "18.3.1";
-var expectedReactDomProfilingVersion = "18.3.1-next-f1338f8080-20240426";
+var selectedReactRuntime = window.__APOLLO_REACT_BENCHMARK_RUNTIME__;
+if (!selectedReactRuntime) {
+  throw new Error("React runtime configuration was not installed before the benchmark module loaded");
+}
+var expectedReactVersion = selectedReactRuntime.reactVersion;
+var expectedReactDomProfilingVersion = selectedReactRuntime.expectedReactDomVersion;
 var runtimeCache = new Map;
 var loadApollo = async (version) => {
   const cached = runtimeCache.get(version);
@@ -475,7 +479,7 @@ var runSample = async (arm, config, subscriberCount, block, position, order) => 
       validationErrors.push(`Expected Apollo ${arm.version}, loaded ${client.version}`);
     }
     if (react.version !== expectedReactVersion || reactDom.version !== expectedReactDomProfilingVersion) {
-      validationErrors.push(`Expected React ${expectedReactVersion} and the React 18.3.1 profiling renderer ${expectedReactDomProfilingVersion}, loaded ${react.version}/${reactDom.version}`);
+      validationErrors.push(`Expected React ${expectedReactVersion} and its profiling renderer ${expectedReactDomProfilingVersion}, loaded ${react.version}/${reactDom.version}`);
     }
     if (baselineSnapshot !== "0".repeat(subscriberCount)) {
       validationErrors.push(`Baseline snapshot was ${baselineSnapshot}`);
@@ -695,6 +699,8 @@ var summarize = (config, samples) => {
     generatedAt: new Date().toISOString(),
     config,
     environment: {
+      selectedReactMajor: selectedReactRuntime.major,
+      selectedReactLabel: selectedReactRuntime.label,
       react: react.version,
       reactDom: reactDom.version,
       userAgent: navigator.userAgent
@@ -712,6 +718,46 @@ var headlineTargets = [
 ];
 var initialTraceStripsMarkup = document.querySelector("#trace-strips")?.innerHTML ?? "";
 var pendingVerdict = "Run the benchmark. A result passes only if every required condition holds.";
+var reactVersionSelect = document.querySelector("#react-version");
+if (reactVersionSelect) {
+  let runtimeSwitchPending = false;
+  window.addEventListener("pageshow", () => {
+    reactVersionSelect.value = selectedReactRuntime.major;
+    if (!runtimeSwitchPending)
+      return;
+    runtimeSwitchPending = false;
+    reactVersionSelect.disabled = false;
+    const runButton = document.querySelector("#run");
+    if (runButton)
+      runButton.disabled = false;
+    const status = document.querySelector("#status");
+    if (status) {
+      status.textContent = `${selectedReactRuntime.requestWarning ? `${selectedReactRuntime.requestWarning} ` : ""}Ready. ${selectedReactRuntime.label} selected; the runtime change was canceled.`;
+    }
+  });
+  reactVersionSelect.addEventListener("change", () => {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("react", reactVersionSelect.value);
+    for (const [parameter, selector] of [
+      ["blocks", "#blocks"],
+      ["subscribers", "#subscribers"],
+      ["rows", "#rows"]
+    ]) {
+      const control = document.querySelector(selector);
+      if (control)
+        nextUrl.searchParams.set(parameter, control.value);
+    }
+    reactVersionSelect.disabled = true;
+    const runButton = document.querySelector("#run");
+    if (runButton)
+      runButton.disabled = true;
+    const status = document.querySelector("#status");
+    if (status)
+      status.textContent = `Reloading with React ${reactVersionSelect.value}…`;
+    runtimeSwitchPending = true;
+    window.location.assign(nextUrl);
+  });
+}
 var resetLiveResults = (headlineContextText, traceProvenanceText) => {
   for (const [, selector] of headlineTargets) {
     const target = document.querySelector(selector);
@@ -766,7 +812,7 @@ var renderResult = (result) => {
   }
   const headlineContext = document.querySelector("#headline-context");
   if (headlineContext) {
-    headlineContext.textContent = `${largestSubscriberCount} subscribers · live run${result.proofPassed ? "" : " · proof failed"}`;
+    headlineContext.textContent = `${largestSubscriberCount} subscribers · ${result.environment.selectedReactLabel} · live run${result.proofPassed ? "" : " · proof failed"}`;
   }
   const verdict = document.querySelector("#verdict");
   if (verdict) {
@@ -845,6 +891,8 @@ var runButton = document.querySelector("#run");
 runButton?.addEventListener("click", async () => {
   const status = document.querySelector("#status");
   runButton.disabled = true;
+  if (reactVersionSelect)
+    reactVersionSelect.disabled = true;
   resetLiveResults("run in progress…", "Run in progress. The strips below show the expected eight-subscriber pattern until live data completes.");
   try {
     const config = {
@@ -911,5 +959,7 @@ runButton?.addEventListener("click", async () => {
     throw error;
   } finally {
     runButton.disabled = false;
+    if (reactVersionSelect)
+      reactVersionSelect.disabled = false;
   }
 });

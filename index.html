@@ -15,13 +15,44 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <script type="importmap">
-      {
-        "imports": {
-          "react": "https://esm.sh/react@18.3.1?target=es2022",
-          "react-dom/profiling": "https://esm.sh/react-dom@18.3.1/profiling?external=react&target=es2022"
-        }
-      }
+    <script>
+      (() => {
+        const runtimes = {
+          18: {
+            major: "18",
+            label: "React 18.3.1",
+            reactVersion: "18.3.1",
+            reactDomPackageVersion: "18.3.1",
+            expectedReactDomVersion: "18.3.1-next-f1338f8080-20240426",
+          },
+          19: {
+            major: "19",
+            label: "React 19.2.0",
+            reactVersion: "19.2.0",
+            reactDomPackageVersion: "19.2.0",
+            expectedReactDomVersion: "19.2.0",
+          },
+        };
+        const requestedMajor = new URLSearchParams(window.location.search).get("react");
+        const selectedRuntime = runtimes[requestedMajor === "19" ? 19 : 18];
+        window.__APOLLO_REACT_BENCHMARK_RUNTIME__ = {
+          ...selectedRuntime,
+          requestWarning:
+            requestedMajor === null || requestedMajor === "18" || requestedMajor === "19"
+              ? null
+              : "Unsupported React selection; using React 18.3.1.",
+        };
+
+        const importMap = document.createElement("script");
+        importMap.type = "importmap";
+        importMap.textContent = JSON.stringify({
+          imports: {
+            react: `https://esm.sh/react@${selectedRuntime.reactVersion}?target=es2022`,
+            "react-dom/profiling": `https://esm.sh/react-dom@${selectedRuntime.reactDomPackageVersion}/profiling?external=react&target=es2022`,
+          },
+        });
+        document.head.append(importMap);
+      })();
     </script>
     <style>
       :root {
@@ -131,10 +162,10 @@
       .lab-header { padding: 24px 26px; border-bottom: 1px solid var(--line); background: #fbfcff; }
       .lab-header h2 { margin: 0; font-size: 23px; }
       .lab-header p { max-width: 820px; margin: 7px 0 0; color: var(--slate); }
-      .controls { display: grid; grid-template-columns: .8fr 1.15fr 1fr auto; gap: 14px; align-items: end; padding: 24px 26px 20px; }
+      .controls { display: grid; grid-template-columns: 1fr .75fr 1.15fr 1.1fr auto; gap: 14px; align-items: end; padding: 24px 26px 20px; }
       label { display: grid; gap: 7px; color: var(--slate); font-size: 13px; }
       label strong { color: var(--ink); font-weight: 600; }
-      input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #bac3d6; border-radius: 7px; color: var(--ink); background: white; font: 500 14px "IBM Plex Mono", monospace; }
+      input, select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #bac3d6; border-radius: 7px; color: var(--ink); background: white; font: 500 14px "IBM Plex Mono", monospace; }
       .control-help { padding: 0 26px 20px; color: var(--muted); font-size: 13px; }
       .dependency-note { margin: 0 26px 24px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 9px; color: var(--slate); background: white; font-size: 13px; }
       .dependency-note strong { color: var(--ink); }
@@ -262,7 +293,7 @@
         <div class="section-heading">
           <p class="eyebrow">Live, fail-closed experiment</p>
           <h1 id="run-title">Run the proof in this browser</h1>
-          <p>The suite loads exact Apollo and React versions, discards warmups, and runs 96 measured samples in mirrored order. Millisecond values depend on this browser; commit counts and validation checks are the primary result.</p>
+          <p>Choose React 18 or React 19. The suite loads exact Apollo and React versions, discards warmups, and runs 96 measured samples in mirrored order. Millisecond values depend on this browser; commit counts and validation checks are the primary result.</p>
         </div>
 
         <div class="lab-shell">
@@ -271,18 +302,39 @@
             <p>The 400-row default gives each React commit substantial real DOM work without adding a synthetic delay.</p>
           </div>
           <div class="controls">
+            <label for="react-version"><strong>React runtime</strong><select id="react-version"><option value="18">React 18.3.1</option><option value="19">React 19.2.0</option></select></label>
             <label for="blocks"><strong>Balanced blocks</strong><input id="blocks" type="number" min="2" max="10" step="2" value="4" /></label>
             <label for="subscribers"><strong>Subscriber counts</strong><input id="subscribers" value="1,2,4,8" /></label>
             <label for="rows"><strong>DOM rows per subscriber</strong><input id="rows" type="number" min="0" max="2000" value="400" /></label>
             <button id="run" type="button">Run proof</button>
           </div>
           <div class="control-help">
-            A balanced block runs the three arms forward and backward (<span class="mono">ABCCBA</span> or <span class="mono">CBAABC</span>). One subscriber is the negative control; larger counts test amplification.
+            A balanced block runs the three arms forward and backward (<span class="mono">ABCCBA</span> or <span class="mono">CBAABC</span>). One subscriber is the negative control; larger counts test amplification. These settings carry across a React runtime reload.
           </div>
           <div class="dependency-note">
-            <strong>Exact runtime:</strong> Apollo Client 3.6.9 and 3.14.1, React 18.3.1, and <code>react-dom@18.3.1/profiling</code> are imported from esm.sh. An unavailable or mismatched package fails the run instead of silently changing the environment.
+            <strong>Exact runtime:</strong> Apollo Client 3.6.9 and 3.14.1, <span id="selected-react-label">the selected React release</span>, and <code id="selected-react-dom-label">the matching react-dom/profiling release</code> are imported from esm.sh. Changing React runtime reloads the page so packages from different React releases cannot mix. An unavailable or mismatched package fails the run instead of silently changing the environment.
           </div>
           <p id="status" class="status" aria-live="polite">Ready. The first run downloads exact package versions from esm.sh.</p>
+          <script>
+            (() => {
+              const runtime = window.__APOLLO_REACT_BENCHMARK_RUNTIME__;
+              const parameters = new URLSearchParams(window.location.search);
+              document.querySelector("#react-version").value = runtime.major;
+              for (const [parameter, selector] of [
+                ["blocks", "#blocks"],
+                ["subscribers", "#subscribers"],
+                ["rows", "#rows"],
+              ]) {
+                const value = parameters.get(parameter);
+                if (value !== null) document.querySelector(selector).value = value;
+              }
+              document.querySelector("#selected-react-label").textContent = runtime.label;
+              document.querySelector("#selected-react-dom-label").textContent =
+                `react-dom@${runtime.reactDomPackageVersion}/profiling`;
+              document.querySelector("#status").textContent =
+                `${runtime.requestWarning ? `${runtime.requestWarning} ` : ""}Ready. ${runtime.label} selected; the first run downloads exact package versions from esm.sh.`;
+            })();
+          </script>
         </div>
 
         <div class="results-heading">
@@ -434,6 +486,7 @@
             <li><a href="https://github.com/apollographql/apollo-client/blob/v3.14.1/src/react/hooks/useQuery.ts#L415-L450">Apollo 3.14.1 passes the store-change handler</a></li>
             <li><a href="https://github.com/apollographql/apollo-client/blob/v3.14.1/src/react/hooks/useQuery.ts#L688-L719">Apollo 3.14.1 invokes it from <code>setResult</code></a></li>
             <li><a href="https://github.com/facebook/react/blob/v18.3.1/packages/react-reconciler/src/ReactFiberHooks.old.js#L1478-L1506">React 18.3.1 external-store updates use <code>SyncLane</code></a></li>
+            <li><a href="https://github.com/facebook/react/blob/v19.2.0/packages/react-reconciler/src/ReactFiberHooks.js#L1864-L1892">React 19.2.0 external-store updates still use <code>SyncLane</code></a></li>
             <li><a href="https://github.com/apollographql/apollo-client/issues/10364">Apollo issue #10364: related duplicate-subscriber precursor</a></li>
           </ul>
         </div>

@@ -38,6 +38,7 @@ const benchmarkSource = publicTextFiles.get('src/benchmark.ts') ?? '';
 const errors: string[] = [];
 
 const requiredElementIds = [
+  'react-version',
   'blocks',
   'subscribers',
   'rows',
@@ -104,7 +105,7 @@ const requiredReadmeContent = [
   '## Scope',
   'not another GraphQL result or another Apollo cache write',
   'creates one delivery, not N',
-  'other query shapes, fetch policies, or React versions follow this exact path',
+  'other query shapes, fetch policies, or React releases follow this exact path',
 ];
 for (const content of requiredReadmeContent) {
   if (!readme.includes(content)) errors.push(`README.md is missing required explanation: ${content}`);
@@ -154,6 +155,38 @@ if (!/id="rows"[^>]*value="400"/.test(html)) errors.push('index.html must defaul
 if (!benchmarkSource.includes("document.querySelector<HTMLInputElement>('#rows')?.value ?? '400'")) {
   errors.push('src/benchmark.ts must fall back to 400 DOM rows per subscriber');
 }
+const pinnedRuntimeBlocks = [
+  `label: "React 18.3.1",
+            reactVersion: "18.3.1",
+            reactDomPackageVersion: "18.3.1",
+            expectedReactDomVersion: "18.3.1-next-f1338f8080-20240426",`,
+  `label: "React 19.2.0",
+            reactVersion: "19.2.0",
+            reactDomPackageVersion: "19.2.0",
+            expectedReactDomVersion: "19.2.0",`,
+];
+for (const [index, version] of ['React 18.3.1', 'React 19.2.0'].entries()) {
+  if (!html.includes(version)) errors.push(`index.html must offer the pinned runtime ${version}`);
+  if (!readme.includes(version)) errors.push(`README.md must document the pinned runtime ${version}`);
+  if (!html.includes(pinnedRuntimeBlocks[index])) {
+    errors.push(`index.html runtime table must retain the exact package and validation pins for ${version}`);
+  }
+}
+if (!benchmarkSource.includes("nextUrl.searchParams.set('react', reactVersionSelect.value)")) {
+  errors.push('src/benchmark.ts must reload the page when the React runtime changes');
+}
+for (const [parameter, selector] of [
+  ['blocks', '#blocks'],
+  ['subscribers', '#subscribers'],
+  ['rows', '#rows'],
+]) {
+  if (!benchmarkSource.includes(`['${parameter}', '${selector}']`)) {
+    errors.push(`src/benchmark.ts must preserve the ${parameter} control across a React runtime reload`);
+  }
+}
+if (!html.includes('Changing React runtime reloads the page so packages from different React releases cannot mix.')) {
+  errors.push('index.html must explain runtime isolation');
+}
 
 const allowedPublicHosts = new Set([
   'bun.sh',
@@ -198,7 +231,7 @@ if (referenceResult.samples?.length !== 96) errors.push('Reference result must c
 if (referenceResult.config?.renderedRowsPerSubscriber !== 40) {
   errors.push('Reference result must retain its reviewed 40-row configuration');
 }
-if (!readme.includes('reviewed 96-sample result collected with 40 rows per subscriber')) {
+if (!readme.includes('reviewed React 18.3.1 96-sample result collected with 40 rows per subscriber')) {
   errors.push('README.md must distinguish the 40-row reference result from the 400-row browser default');
 }
 

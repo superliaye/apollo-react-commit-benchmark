@@ -19,6 +19,8 @@ One in-memory cache write reaches several independently mounted components that 
 
 One consumer is the negative control: both versions produce two commits. As subscriber fan-out increases, stock 3.14.1 produces `2N` commits at every tested count, while stock 3.6.9 and the grouped-delivery diagnostic remain at two.
 
+The browser runner verifies this pattern independently under React 18.3.1 and React 19.2.0. React 19 does not remove the fragmentation in this fixture.
+
 This does not mean every Apollo 3.14.1 application is slower. The effect requires multiple independently mounted `useQuery` consumers whose deliveries reach React separately. Apollo may deduplicate their network request, but each mounted `useQuery` remains a separate React subscriber. Reading the query once and distributing its result through props or context creates one delivery, not N.
 
 ## The causal chain
@@ -47,7 +49,7 @@ one combined query commit          one query commit per consumer
 one combined parent commit         one parent commit per consumer
 ```
 
-React 18 automatic batching does not guarantee that synchronous external-store updates arriving in different browser tasks share a commit. In this fixture, the 3.14.1 callback can flush before Apollo starts the next delivery task.
+Automatic batching in the tested React 18 and React 19 releases does not guarantee that synchronous external-store updates arriving in different browser tasks share a commit. In this fixture, the 3.14.1 callback can flush before Apollo starts the next delivery task.
 
 The `DefaultLane` versus `SyncLane` explanation is traced to the pinned Apollo and React sources. The benchmark directly manipulates delivery-task grouping; it does not independently manipulate React lanes.
 
@@ -144,11 +146,11 @@ bun run check
 bun run dev
 ```
 
-Open the printed URL and press **Run proof**. The browser UI defaults to subscriber counts `1,2,4,8`, four balanced blocks, and 400 real DOM rows per subscriber. It discards warmups and runs 96 measured samples in mirrored `ABCCBA` / `CBAABC` order.
+Open the printed URL, select React 18.3.1 or React 19.2.0, and press **Run proof**. Changing React runtime reloads the page so React, React DOM, and Apollo cannot retain modules from the previous selection; the block, subscriber, and row settings carry across that reload. The browser UI defaults to subscriber counts `1,2,4,8`, four balanced blocks, and 400 real DOM rows per subscriber. It discards warmups and runs 96 measured samples in mirrored `ABCCBA` / `CBAABC` order.
 
-The checked-in [`results/reference-run.json`](results/reference-run.json) is the reviewed 96-sample result collected with 40 rows per subscriber. The row count changes the amount of real DOM work and timing, not the expected commit-count proof conditions.
+The checked-in [`results/reference-run.json`](results/reference-run.json) is the reviewed React 18.3.1 96-sample result collected with 40 rows per subscriber. The row count changes the amount of real DOM work and timing, not the expected commit-count proof conditions.
 
-The live page imports exact packages from [esm.sh](https://esm.sh/): Apollo Client 3.6.9 and 3.14.1, React 18.3.1, and `react-dom@18.3.1/profiling`. An unavailable or mismatched package fails the proof instead of silently changing the environment.
+The live page imports exact packages from [esm.sh](https://esm.sh/): Apollo Client 3.6.9 and 3.14.1 plus either React 18.3.1 or React 19.2.0 and the matching `react-dom/profiling` package. An unavailable or mismatched package fails the proof instead of silently changing the environment.
 
 ## Public source trail
 
@@ -158,11 +160,12 @@ The live page imports exact packages from [esm.sh](https://esm.sh/): Apollo Clie
 - [Apollo 3.14.1 passes the store-change handler](https://github.com/apollographql/apollo-client/blob/v3.14.1/src/react/hooks/useQuery.ts#L415-L450)
 - [Apollo 3.14.1 invokes it from `setResult`](https://github.com/apollographql/apollo-client/blob/v3.14.1/src/react/hooks/useQuery.ts#L688-L719)
 - [React 18.3.1 external-store updates use `SyncLane`](https://github.com/facebook/react/blob/v18.3.1/packages/react-reconciler/src/ReactFiberHooks.old.js#L1478-L1506)
+- [React 19.2.0 external-store updates still use `SyncLane`](https://github.com/facebook/react/blob/v19.2.0/packages/react-reconciler/src/ReactFiberHooks.js#L1864-L1892)
 - [Apollo issue #10364: a related duplicate-subscriber precursor, not proof of this version-specific path](https://github.com/apollographql/apollo-client/issues/10364)
 
 ## Scope
 
-This benchmark establishes a reproducible mechanism for this query-subscriber shape. It does not establish that every Apollo 3.14.1 application is slower, that timing deltas generalize to another screen, that the non-memoized render/CPU multiplier is universal, that lanes were independently varied, that other query shapes, fetch policies, or React versions follow this exact path, or that the diagnostic intervention is safe to ship.
+This benchmark establishes a reproducible mechanism for this query-subscriber shape under the pinned React 18.3.1 and React 19.2.0 releases. It does not establish that every Apollo 3.14.1 application is slower, that timing deltas generalize to another screen, that the non-memoized render/CPU multiplier is universal, that lanes were independently varied, that other query shapes, fetch policies, or React releases follow this exact path, or that the diagnostic intervention is safe to ship.
 
 ## Repository map
 
